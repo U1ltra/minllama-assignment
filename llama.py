@@ -281,7 +281,7 @@ class Llama(LlamaPreTrainedModel):
         else:
             # inference-time mini-optimization: only forward the output on the very last position
             logits = self.output(
-                h[:, [-1], :]
+                h[:, [-1], :] # [batch_size, 1 (time), vocab_size]
             )  # note: using list [-1] to preserve the time dim
 
         return logits, h
@@ -308,11 +308,12 @@ class Llama(LlamaPreTrainedModel):
             logits, _ = self(idx_cond)
             logits = logits[:, -1, :]  # crop to just the final time step
             # todo
-            raise NotImplementedError
+            # raise NotImplementedError
+            self.eval()
 
             if temperature == 0.0:
                 # select the single most likely index
-                idx_next = None
+                idx_next = torch.argmax(logits, dim=-1, keepdim=True)
             else:
                 """
                 Perform temperature sampling:
@@ -323,7 +324,16 @@ class Llama(LlamaPreTrainedModel):
 
                 Note that we are not using top-k sampling/nucleus sampling in this procedure.
                 """
-                idx_next = None
+                scale_logits = logits / temperature
+
+                norm_logits = F.softmax(scale_logits, dim=-1)
+                norm_logits = norm_logits.squeeze(1)
+                norm_logits = torch.transpose(norm_logits, 0, 1)
+
+                idx_next = torch.multinomial(norm_logits, num_samples=1)
+                idx_next = torch.transpose(idx_next, 0, 1)
+                idx_next = idx_next.unsqueeze(1)
+
             # append sampled index to the running sequence and continue
             idx = torch.cat((idx, idx_next), dim=1)
 
