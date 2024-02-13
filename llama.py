@@ -212,7 +212,13 @@ class LlamaLayer(nn.Module):
            output of the feed-forward network
         """
         # todo
-        raise NotImplementedError
+        attn_norm = self.attention_norm(x)
+        attn_score = self.attention(attn_norm)
+        residual_attn = attn_norm + attn_score
+        ffn_norm = self.ffn_norm(residual_attn)
+        ffn_score = self.feed_forward(ffn_norm)
+        residual_ffn = ffn_norm + ffn_score
+        return residual_ffn
 
 
 class Llama(LlamaPreTrainedModel):
