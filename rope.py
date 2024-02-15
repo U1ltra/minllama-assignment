@@ -58,10 +58,11 @@ def apply_rotary_emb(
     # and Section 3 in https://arxiv.org/abs/2104.09864.
 
     # reshape xq and xk to match the complex representation
-    query_real, query_imag = (
+    query_real, query_imag = (  # shape: (batch_size, seqlen, n_local_heads, head_dim // 2)
         query.float().reshape(query.shape[:-1] + (-1, 2)).unbind(-1)
     )
-    key_real, key_imag = key.float().reshape(key.shape[:-1] + (-1, 2)).unbind(-1)
+    key_real, key_imag = key.float().reshape(key.shape[:-1] + (-1, 2)).unbind(-1)   # shape: (batch_size, seqlen, n_local_kv_heads, head_dim // 2)
+    
     # This separates each query/key vector into its odd and even indices (assuming *one-indexing*).
     # query_real contains q_1, q_3, q_5, ... and query_imag contains q_2, q_4, q_6, ...
 
@@ -69,14 +70,20 @@ def apply_rotary_emb(
     # slide 22 (linked above).
     theta_tensor = torch.arange(0, head_dim, 2.0, device=device) / head_dim
     theta_tensor = torch.pow(theta, -theta_tensor)
-    freqs_cis = torch.zeros((seqlen, head_dim // 2, 2), device=device) # shape: (seqlen, head_dim // 2, 2)
-    seqidx = torch.arange(seqlen, device=device) # shape: (seqlen, 1)
-    seq_theta = torch.outer(seqidx, theta_tensor) # shape: (seqlen, head_dim // 2)
+    freqs_cis = torch.zeros((seqlen, head_dim // 2, 2), device=device) 
+    seqidx = torch.arange(seqlen, device=device) 
+    seq_theta = torch.outer(seqidx, theta_tensor)  # shape: (seqlen, head_dim // 2)
+
     freqs_cis[:, :, 0] = torch.cos(seq_theta)
     freqs_cis[:, :, 1] = torch.sin(seq_theta)
     
     # Then, combine these trigonometric values with the tensors query_real, query_imag,
     # key_real, and key_imag.
+    query_real = query_real.transpose(1, 2) # shape: (batch_size, n_local_heads, seqlen, head_dim // 2)
+    query_imag = query_imag.transpose(1, 2) # shape: (batch_size, n_local_heads, seqlen, head_dim // 2)
+    key_real = key_real.transpose(1, 2) # shape: (batch_size, n_local_kv_heads, seqlen, head_dim // 2)
+    key_imag = key_imag.transpose(1, 2) # shape: (batch_size, n_local_kv_heads, seqlen, head_dim // 2) 
+
     q_item1, q_item2 = (
         query_real * freqs_cis[:, :, 0] - query_imag * freqs_cis[:, :, 1],
         query_real * freqs_cis[:, :, 1] + query_imag * freqs_cis[:, :, 0],
@@ -85,10 +92,13 @@ def apply_rotary_emb(
         key_real * freqs_cis[:, :, 0] - key_imag * freqs_cis[:, :, 1],
         key_real * freqs_cis[:, :, 1] + key_imag * freqs_cis[:, :, 0],
     )
-    
+
     # Finally, reshape the results back to the original shape.
     query_out = torch.stack((q_item1, q_item2), dim=-1).reshape(query.shape)
     key_out = torch.stack((k_item1, k_item2), dim=-1).reshape(key.shape)
+
+    query_out = query_out.transpose(1, 2)
+    key_out = key_out.transpose(1, 2)
     
     # Return the rotary position embeddings for the query and key tensors
     return query_out, key_out
