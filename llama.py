@@ -214,10 +214,11 @@ class LlamaLayer(nn.Module):
         # todo
         attn_norm = self.attention_norm(x)
         attn_score = self.attention(attn_norm)
-        residual_attn = attn_norm + attn_score
+        residual_attn = x + attn_score # which input? -> unnormalized self-attention output
+                                        # significantly improves the performance of the model (fix bug)
         ffn_norm = self.ffn_norm(residual_attn)
         ffn_score = self.feed_forward(ffn_norm)
-        residual_ffn = ffn_norm + ffn_score
+        residual_ffn = residual_attn + ffn_score
         return residual_ffn
 
 
