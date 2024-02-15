@@ -107,6 +107,7 @@ class Attention(nn.Module):
         Make sure to use attention_dropout (self.attn_dropout) on the computed
         attention matrix before applying it to the value tensor.
         """
+
         attn_scores = torch.matmul(query, torch.transpose(key, -1, -2))
         norm_attn_scores = attn_scores / torch.sqrt(torch.tensor(self.head_dim, dtype=torch.float32))
         attn_probs = F.softmax(norm_attn_scores, dim=-1)
@@ -135,6 +136,8 @@ class Attention(nn.Module):
 
         # RoPE relative positional embeddings
         query, key = apply_rotary_emb(query, key, self.head_dim, self.max_seq_len)
+        query = query.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
+        key = key.transpose(1, 2)   # wired. why do I have to transpose it?
 
         # Grouped multiquery attention: expand out keys and values.
         # Convert both to:
@@ -298,6 +301,8 @@ class Llama(LlamaPreTrainedModel):
         Most likely you'll want to make sure to be in model.eval() mode of operation for this.
         Also note this is a super inefficient version of sampling with no key/value cache.
         """
+        self.eval()
+
         for _ in range(max_new_tokens):
             # if the sequence context is growing too long we must crop it at block_size
             idx_cond = (
@@ -310,7 +315,6 @@ class Llama(LlamaPreTrainedModel):
             logits = logits[:, -1, :]  # crop to just the final time step
             # todo
             # raise NotImplementedError
-            self.eval()
 
             if temperature == 0.0:
                 # select the single most likely index
@@ -326,15 +330,8 @@ class Llama(LlamaPreTrainedModel):
                 Note that we are not using top-k sampling/nucleus sampling in this procedure.
                 """
                 scale_logits = logits / temperature
-
                 norm_logits = F.softmax(scale_logits, dim=-1)
-                norm_logits = norm_logits.squeeze(1)
-                norm_logits = torch.transpose(norm_logits, 0, 1)
-
                 idx_next = torch.multinomial(norm_logits, num_samples=1)
-                idx_next = torch.transpose(idx_next, 0, 1)
-                idx_next = idx_next.unsqueeze(1)
-
             # append sampled index to the running sequence and continue
             idx = torch.cat((idx, idx_next), dim=1)
 
